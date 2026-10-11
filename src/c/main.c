@@ -369,7 +369,8 @@ static void draw_icon(GContext *ctx, uint8_t icon, int x, int y, int sz) {
       draw_sun(ctx, GPoint(x + sz / 2, y + sz / 2), sz / 2 - 1);
       break;
     case I_CLEAR_NIGHT:
-      draw_moon(ctx, GPoint(x + U(7), y + U(9)), U(6), WXC(GColorLightGray));
+      // The visible crescent sits left of the full circle, so offset it to look centered
+      draw_moon(ctx, GPoint(x + U(9), y + U(8)), U(6), WXC(GColorLightGray));
       break;
     case I_PARTLY_DAY:
       set_colors(ctx, WXC(GColorYellow));
