@@ -25,7 +25,7 @@ with "Group time with complications" on, the two re-center together in the middl
 
 ## Settings (phone app, gear icon)
 
-- Time font (Bold, Light, Digital, Digital bold, Large), leading zero on hours, AM/PM on/off
+- Time font (Bold, Light, Digital, Digital bold, Large), solid or outlined (thin/thick, custom center color), leading zero on hours, AM/PM on/off
 - Colors: background, time, AM/PM, complication text, complication icons
 - Bars: background color behind the top/bottom rows, a divider line next to the time, or both
 - Icon style: line art (outlined, clean on any color) or solid

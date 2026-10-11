@@ -11,7 +11,7 @@
 
 #define KEY_SETTINGS 1
 #define KEY_WEATHER  2
-#define SETTINGS_VERSION 8
+#define SETTINGS_VERSION 9
 #define NUM_SLOTS 6
 #define NA -1
 #define DEG "\xc2\xb0"  // UTF-8 degree sign, escaped so file encoding can't break it
@@ -82,6 +82,8 @@ typedef struct {
   uint8_t icon_fill;         // line art centers: 0 = auto (like TimeStyle), 1 = custom color, 2 = see-through
   GColor icon_fill_color;
   uint8_t time_font;
+  uint8_t time_outline;      // 0 = solid, 1 = thin outline, 2 = thick outline
+  GColor time_fill;          // digit centers when outlined
   uint8_t weather_interval;  // minutes
   uint8_t slots[NUM_SLOTS];
 } Settings;
@@ -893,11 +895,23 @@ static void canvas_update(Layer *layer, GContext *ctx) {
     }
   }
 
-  // Time
-  graphics_context_set_text_color(ctx, s.time);
-  graphics_draw_text(ctx, s_time_buf, s_f_time.font,
-                     GRect(0, s_time_y - s_f_time.off, b.size.w, s_f_time.h + s_f_time.off + 14),
-                     GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  // Time (outlined: stamp the digits around in the outline color, then fill)
+  GRect tr = GRect(0, s_time_y - s_f_time.off, b.size.w, s_f_time.h + s_f_time.off + 14);
+  if (s.time_outline) {
+    int r = s.time_outline >= 2 ? 2 : 1;
+    graphics_context_set_text_color(ctx, s.time);
+    for (int dy = -r; dy <= r; dy++) {
+      for (int dx = -r; dx <= r; dx++) {
+        if ((dx == 0 && dy == 0) || dx * dx + dy * dy > r * r + 1) continue;
+        graphics_draw_text(ctx, s_time_buf, s_f_time.font, GRect(tr.origin.x + dx, tr.origin.y + dy, tr.size.w, tr.size.h),
+                           GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+      }
+    }
+    graphics_context_set_text_color(ctx, s.time_fill);
+  } else {
+    graphics_context_set_text_color(ctx, s.time);
+  }
+  graphics_draw_text(ctx, s_time_buf, s_f_time.font, tr, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   if (s_show_ampm) {
     graphics_context_set_text_color(ctx, s.ampm);
     text_at(ctx, s_ampm, &s_f_ampm, b.size.w / 2, s_ampm_y, b.size.w);
@@ -1189,6 +1203,8 @@ static void default_settings(void) {
     .bar_style = 0,
     .icon_style = 0,
     .icon_fill = 0,
+    .time_outline = 0,
+    .time_fill = GColorBlack,
     .icon_fill_color = GColorWhite,
     .icon_back = 0,
     .top_bar = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack),
@@ -1264,6 +1280,8 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   READ_COLOR(LineColor, line)
   READ_COLOR(IconBackColor, icon_back_color)
   READ_U8(TimeFont, time_font)
+  READ_U8(TimeOutline, time_outline)
+  READ_COLOR(TimeFillColor, time_fill)
   READ_U8(WeatherInterval, weather_interval)
   READ_U8(Slot0, slots[0])
   READ_U8(Slot1, slots[1])

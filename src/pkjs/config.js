@@ -43,6 +43,16 @@ module.exports = [
         ]
       },
       {
+        type: 'select', messageKey: 'TimeOutline', label: 'Time style', defaultValue: '0',
+        description: 'Outlined uses the Time text color for the outline and the color below for the inside.',
+        options: [
+          { label: 'Solid', value: '0' },
+          { label: 'Outline (thin)', value: '1' },
+          { label: 'Outline (thick)', value: '2' }
+        ]
+      },
+      { type: 'color', messageKey: 'TimeFillColor', label: 'Time center color (outlined)', defaultValue: '000000' },
+      {
         type: 'toggle', messageKey: 'BigTime', label: 'Bigger time when a row is empty',
         description: 'If all top or all bottom complications are None, the time grows into the free space.',
         defaultValue: true

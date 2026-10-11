@@ -36,6 +36,8 @@
       "LeadingZero",
       "ShowAmPm",
       "TimeFont",
+      "TimeOutline",
+      "TimeFillColor",
       "BigTime",
       "CenterGroup",
       "Slot0",
