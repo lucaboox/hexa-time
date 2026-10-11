@@ -1,0 +1,96 @@
+{
+  "name": "hexa-time",
+  "author": "lucab",
+  "version": "1.0.0",
+  "keywords": [
+    "pebble-app"
+  ],
+  "private": true,
+  "pebble": {
+    "displayName": "Hexa Time",
+    "uuid": "88b571fd-07a4-4de8-bf6f-d1e8f8dc49e8",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint",
+      "gabbro"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": [
+      "location",
+      "configurable",
+      "health"
+    ],
+    "messageKeys": [
+      "BgColor",
+      "TimeColor",
+      "AmPmColor",
+      "CompTextColor",
+      "CompIconColor",
+      "LeadingZero",
+      "ShowAmPm",
+      "TimeFont",
+      "BigTime",
+      "CenterGroup",
+      "Slot0",
+      "Slot1",
+      "Slot2",
+      "Slot3",
+      "Slot4",
+      "Slot5",
+      "TempUnit",
+      "DistUnit",
+      "WeatherInterval",
+      "WeatherLocation",
+      "BtVibe",
+      "BattColors",
+      "BattTextColor",
+      "WeatherColors",
+      "WeatherTemp",
+      "WeatherHi",
+      "WeatherLo",
+      "WeatherIcon",
+      "RequestWeather"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_BIG_58",
+          "file": "fonts/FiraSansCondensed-Bold.ttf",
+          "characterRegex": "[0-9:]",
+          "targetPlatforms": [
+            "basalt",
+            "chalk",
+            "diorite",
+            "flint"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_BIG_80",
+          "file": "fonts/FiraSansCondensed-Bold.ttf",
+          "characterRegex": "[0-9:]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_BIG_82",
+          "file": "fonts/FiraSansCondensed-Bold.ttf",
+          "characterRegex": "[0-9:]",
+          "targetPlatforms": [
+            "gabbro"
+          ]
+        }
+      ]
+    }
+  }
+}
