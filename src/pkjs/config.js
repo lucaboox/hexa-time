@@ -99,7 +99,7 @@ module.exports = [
       { type: 'heading', defaultValue: 'Bars & icon backing' },
       {
         type: 'select', messageKey: 'BarStyle', label: 'Complication bars', defaultValue: '0',
-        description: 'A colored area behind the top/bottom complications, a divider line next to the time, or both. With only one row in use, the bar gets taller with bigger icons and text.',
+        description: 'A colored area behind the top/bottom complications, a divider line next to the time, or both.',
         options: [
           { label: 'None', value: '0' },
           { label: 'Background', value: '1' },
@@ -118,6 +118,16 @@ module.exports = [
           { label: 'Solid', value: '1' }
         ]
       },
+      {
+        type: 'select', messageKey: 'IconFill', label: 'Line art icon centers', defaultValue: '0',
+        description: 'Auto works like TimeStyle: white centers with black outlines, or black centers with colored outlines on a black bar.',
+        options: [
+          { label: 'Auto (like TimeStyle)', value: '0' },
+          { label: 'Custom color', value: '1' },
+          { label: 'See-through', value: '2' }
+        ]
+      },
+      { type: 'color', messageKey: 'IconFillColor', label: 'Icon center color (custom)', defaultValue: 'FFFFFF' },
       {
         type: 'select', messageKey: 'IconBack', label: 'Icon backing', defaultValue: '0',
         description: 'Optional extra backing behind icons. Usually not needed with line art.',

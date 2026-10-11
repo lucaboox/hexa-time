@@ -57,6 +57,8 @@
       "BottomBarColor",
       "LineColor",
       "IconStyle",
+      "IconFill",
+      "IconFillColor",
       "IconBack",
       "IconBackColor",
       "WeatherTemp",

@@ -11,7 +11,7 @@
 
 #define KEY_SETTINGS 1
 #define KEY_WEATHER  2
-#define SETTINGS_VERSION 7
+#define SETTINGS_VERSION 8
 #define NUM_SLOTS 6
 #define NA -1
 #define DEG "\xc2\xb0"  // UTF-8 degree sign, escaped so file encoding can't break it
@@ -23,15 +23,16 @@
 #define GAP 2
 #endif
 
-// Icon sizes: [solid, line art] x [normal, single tall bar]
+// Icon sizes: [solid, line art]. Line art always uses TimeStyle's native
+// 25px, so the icons render exactly as designed (no scaling).
+#define PDC_SIZE 25
 #ifdef LARGE_SCREEN
-static const uint8_t ICON_SIZES[2][2] = { { 22, 32 }, { 32, 42 } };
-static const uint8_t ICON_BIG_SIZES[2][2] = { { 30, 40 }, { 40, 50 } };
+static const uint8_t ICON_SIZES[2] = { 22, PDC_SIZE };
+static const uint8_t ICON_BIG_SIZES[2] = { 30, PDC_SIZE };
 #else
-static const uint8_t ICON_SIZES[2][2] = { { 16, 25 }, { 24, 32 } };
-static const uint8_t ICON_BIG_SIZES[2][2] = { { 22, 30 }, { 30, 38 } };
+static const uint8_t ICON_SIZES[2] = { 16, PDC_SIZE };
+static const uint8_t ICON_BIG_SIZES[2] = { 22, PDC_SIZE };
 #endif
-#define PDC_SIZE 25  // native size of the line-art icons
 
 // Complication types (must match the option values in src/pkjs/config.js)
 enum {
@@ -78,6 +79,8 @@ typedef struct {
   GColor top_bar, bot_bar, line, icon_back_color;
   uint8_t batt_colors;       // 0 = icon color, 1 = red when low, 2 = green/yellow/red by level
   uint8_t icon_style;        // 0 = line art, 1 = solid
+  uint8_t icon_fill;         // line art centers: 0 = auto (like TimeStyle), 1 = custom color, 2 = see-through
+  GColor icon_fill_color;
   uint8_t time_font;
   uint8_t weather_interval;  // minutes
   uint8_t slots[NUM_SLOTS];
@@ -598,30 +601,59 @@ static GColor wx_color(uint8_t icon) {
   }
 }
 
+// Fill (icon centers) and forced stroke for line-art icons drawn on `bg`.
+// Auto matches TimeStyle: black bar -> black centers with colored strokes,
+// any other bar -> white centers with black strokes.
+static GColor s_lfill;
+static bool s_lblack;  // strokes forced to black (auto mode on a non-black bar)
+
+static void line_colors(GColor bg) {
+  s_lfill = bg;
+  s_lblack = false;
+  if (s_mono) return;
+  if (s.icon_fill == 0) {
+    if (gcolor_equal(bg, GColorBlack)) {
+      s_lfill = GColorBlack;
+    } else {
+      s_lfill = GColorWhite;
+      s_lblack = true;
+    }
+  } else if (s.icon_fill == 1) {
+    s_lfill = s.icon_fill_color;
+  }
+}
+
+#define LSTROKE(c) (s_lblack ? GColorBlack : (c))
+
 static void draw_icon_line(GContext *ctx, uint8_t icon, int x, int y, int sz) {
   graphics_context_set_stroke_width(ctx, sz >= 30 ? 3 : 2);
+  line_colors(s_bgc);
+  GColor ic = s_ic, bgc = s_bgc;
+  s_ic = LSTROKE(s_ic);
 
   if (icon <= I_UNKNOWN || (icon >= I_HEAVY_RAIN && icon <= I_SLEET)) {
-    GColor col = wx_color(icon);
+    GColor col = LSTROKE(wx_color(icon));
     if (icon == I_FOG) {
       // No line-art fog icon; the solid one is already made of lines
-      GColor ic = s_ic;
       s_ic = col;
       draw_icon_solid(ctx, I_FOG, x + sz / 8, y + sz / 8, sz * 3 / 4);
-      s_ic = ic;
     } else {
-      draw_pdc(ctx, icon, x, y, sz, s_bgc, col);
+      draw_pdc(ctx, icon, x, y, sz, s_lfill, col);
     }
+    s_ic = ic;
+    s_bgc = bgc;
     return;
   }
 
   switch (icon) {
     case I_BATTERY: {
+      s_ic = ic;
       GColor level = batt_level_color();
-      GColor outline = s.batt_colors == 2 ? level : s_ic;
-      draw_pdc(ctx, I_BATTERY, x, y, sz, s_bgc, outline);
+      GColor outline = LSTROKE(s.batt_colors == 2 ? level : s_ic);
+      if (s_lblack && s.batt_colors == 0) level = GColorBlack;
+      draw_pdc(ctx, I_BATTERY, x, y, sz, s_lfill, outline);
       if (s_batt.is_charging || s_batt.is_plugged) {
-        draw_pdc(ctx, I_BATT_CHARGE, x, y, sz, outline, s_bgc);  // bolt uses inverted colors
+        draw_pdc(ctx, I_BATT_CHARGE, x, y, sz, outline, s_lfill);  // bolt uses inverted colors
       } else {
         int pct = s_batt.charge_percent > 0 ? s_batt.charge_percent : 5;
         int w = (18 * sz / PDC_SIZE) * pct / 100;
@@ -634,11 +666,11 @@ static void draw_icon_line(GContext *ctx, uint8_t icon, int x, int y, int sz) {
     case I_STEPS:
     case I_SLEEP:
     case I_HEART:
-      draw_pdc(ctx, icon, x, y, sz, s_bgc, s_ic);
+      draw_pdc(ctx, icon, x, y, sz, s_lfill, s_ic);
       break;
     case I_BT:
       if (!s_bt) {
-        draw_pdc(ctx, I_BT, x, y, sz, s_bgc, s_mono ? s_ic : PBL_IF_COLOR_ELSE(GColorRed, s_ic));
+        draw_pdc(ctx, I_BT, x, y, sz, s_lfill, s_mono ? s_ic : PBL_IF_COLOR_ELSE(GColorRed, s_ic));
       } else {
         draw_icon_solid(ctx, I_BT, x + sz / 8, y + sz / 8, sz * 3 / 4);
       }
@@ -647,7 +679,7 @@ static void draw_icon_line(GContext *ctx, uint8_t icon, int x, int y, int sz) {
       // Outline map pin to match the line-art set
       int x0 = x + sz / 8, y0 = y + sz / 16, s2 = sz * 3 / 4;
       graphics_context_set_stroke_color(ctx, s_ic);
-      graphics_context_set_fill_color(ctx, s_bgc);
+      graphics_context_set_fill_color(ctx, s_lfill);
       GPoint c = GPoint(x0 + s2 / 2, y0 + s2 * 3 / 8);
       int r = s2 * 3 / 8;
       GPoint tip = GPoint(c.x, y0 + s2 + sz / 8);
@@ -664,15 +696,25 @@ static void draw_icon_line(GContext *ctx, uint8_t icon, int x, int y, int sz) {
       GPoint p[9];
       for (int i = 0; i < 9; i++) p[i] = GPoint(x0 + outer[i * 2] * s2 / 16, y0 + outer[i * 2 + 1] * s2 / 16);
       GPath path = { .num_points = 9, .points = p, .rotation = 0, .offset = GPointZero };
+      graphics_context_set_fill_color(ctx, s_lfill);
+      gpath_draw_filled(ctx, &path);
       graphics_context_set_stroke_color(ctx, s_ic);
       gpath_draw_outline(ctx, &path);
       break;
     }
+    case I_TIMER:
+      graphics_context_set_fill_color(ctx, s_lfill);
+      graphics_fill_circle(ctx, GPoint(x + sz / 8 + (sz * 3 / 4) / 2, y + sz / 8 + (sz * 3 / 4) * 9 / 16),
+                           (sz * 3 / 4) * 6 / 16);
+      draw_icon_solid(ctx, icon, x + sz / 8, y + sz / 8, sz * 3 / 4);
+      break;
     default:
-      // Timer and anything else: the solid versions are already outlines
+      // Anything else: the solid versions are already outlines
       draw_icon_solid(ctx, icon, x + sz / 8, y + sz / 8, sz * 3 / 4);
       break;
   }
+  s_ic = ic;
+  s_bgc = bgc;
 }
 
 static void draw_icon(GContext *ctx, uint8_t icon, int x, int y, int sz) {
@@ -798,13 +840,20 @@ static void draw_slot(GContext *ctx, const Slot *sl, int cx, int col_w, GRect re
       int sp = GAP + 1 + (date_boxed(sl->type) ? BOX_PAD + 1 : 0);
       text_at(ctx, sl->l1, &s_f_small, cx, y, tw);
       y += s_f_small.h + sp;
-      if (date_boxed(sl->type)) {
+      bool boxed = date_boxed(sl->type);
+      if (boxed) {
         int bw = s_icon_s + 2, bh = s_f_comp.h + BOX_PAD * 2;
-        graphics_context_set_stroke_color(ctx, s.icon);
+        GRect box = GRect(cx - bw / 2, y - BOX_PAD, bw, bh);
+        line_colors(bg);
+        graphics_context_set_fill_color(ctx, s_lfill);
+        graphics_fill_rect(ctx, box, 3, GCornersAll);
+        graphics_context_set_stroke_color(ctx, LSTROKE(s.icon));
         graphics_context_set_stroke_width(ctx, 2);
-        graphics_draw_round_rect(ctx, GRect(cx - bw / 2, y - BOX_PAD, bw, bh), 3);
+        graphics_draw_round_rect(ctx, box, 3);
+        if (s.icon_fill != 2) graphics_context_set_text_color(ctx, LSTROKE(s.icon));
       }
       text_at(ctx, sl->l2, &s_f_comp, cx, y, tw);
+      if (boxed) graphics_context_set_text_color(ctx, s.text);
       y += s_f_comp.h + sp;
       text_at(ctx, sl->l3, &s_f_small, cx, y, tw);
       break;
@@ -916,28 +965,19 @@ static bool row_used(int row) {
   return false;
 }
 
-// Complication fonts and icon sizes; `big` = the single tall bar layout
+// Complication fonts (TimeStyle's sidebar sizes) and icon sizes.
+// `big` = the single-row layout: a taller bar with the time moved aside.
 static void set_sizes(bool big) {
   s_big_row = big;
   int line = s.icon_style == 0;
-  s_icon_s = ICON_SIZES[big][line];
-  s_icon_big = ICON_BIG_SIZES[big][line];
+  s_icon_s = ICON_SIZES[line];
+  s_icon_big = ICON_BIG_SIZES[line];
 #ifdef LARGE_SCREEN
-  if (big) {
-    s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD), 10, 19 };
-    s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), 9, 16 };
-  } else {
-    s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), 9, 16 };
-    s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
-  }
+  s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), 9, 16 };
+  s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
 #else
-  if (big) {
-    s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), 9, 16 };
-    s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
-  } else {
-    s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
-    s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 4, 10 };
-  }
+  s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
+  s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 4, 10 };
 #endif
 }
 
@@ -1140,6 +1180,8 @@ static void default_settings(void) {
     .center_group = false,
     .bar_style = 0,
     .icon_style = 0,
+    .icon_fill = 0,
+    .icon_fill_color = GColorWhite,
     .icon_back = 0,
     .top_bar = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack),
     .bot_bar = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack),
@@ -1207,6 +1249,8 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   READ_U8(BarStyle, bar_style)
   READ_U8(IconBack, icon_back)
   READ_U8(IconStyle, icon_style)
+  READ_U8(IconFill, icon_fill)
+  READ_COLOR(IconFillColor, icon_fill_color)
   READ_COLOR(TopBarColor, top_bar)
   READ_COLOR(BottomBarColor, bot_bar)
   READ_COLOR(LineColor, line)

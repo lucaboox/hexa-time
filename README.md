@@ -30,7 +30,8 @@ with "Group time with complications" on, the two re-center together in the middl
 - Bars: background color behind the top/bottom rows, a divider line next to the time, or both
 - Icon style: line art (outlined, clean on any color) or solid
 - Icon backing: circle badge, rounded square badge, or outline so icons stay readable on any color
-- With only one row in use, it becomes a taller bar with bigger icons and text, and the time moves into the free space
+- Line art icon centers: auto (like TimeStyle), custom color, or see-through
+- With only one row in use, that row sits at the screen edge and the time moves into the free space
 - 12h/24h follows the watch's system setting
 - Celsius/Fahrenheit, km/miles, weather update interval, optional city instead of GPS
 - Vibrate on Bluetooth disconnect
