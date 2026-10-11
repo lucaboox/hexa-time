@@ -96,6 +96,37 @@ module.exports = [
   {
     type: 'section',
     items: [
+      { type: 'heading', defaultValue: 'Bars & icon backing' },
+      {
+        type: 'select', messageKey: 'BarStyle', label: 'Complication bars', defaultValue: '0',
+        description: 'A colored area behind the top/bottom complications, a divider line next to the time, or both.',
+        options: [
+          { label: 'None', value: '0' },
+          { label: 'Background', value: '1' },
+          { label: 'Line', value: '2' },
+          { label: 'Background + line', value: '3' }
+        ]
+      },
+      { type: 'color', messageKey: 'TopBarColor', label: 'Top bar background', defaultValue: '555555' },
+      { type: 'color', messageKey: 'BottomBarColor', label: 'Bottom bar background', defaultValue: '555555' },
+      { type: 'color', messageKey: 'LineColor', label: 'Divider line', defaultValue: 'AAAAAA' },
+      {
+        type: 'select', messageKey: 'IconBack', label: 'Icon backing', defaultValue: '0',
+        description: 'Keeps icons readable on any bar or background color.',
+        options: [
+          { label: 'None', value: '0' },
+          { label: 'Circle badge', value: '1' },
+          { label: 'Rounded square badge', value: '2' },
+          { label: 'Outline', value: '3' }
+        ]
+      },
+      { type: 'color', messageKey: 'IconBackColor', label: 'Badge / outline color', defaultValue: '000000' }
+    ]
+  },
+
+  {
+    type: 'section',
+    items: [
       { type: 'heading', defaultValue: 'Top complications' },
       { type: 'text', defaultValue: 'Slots set to None are skipped and the rest spread out to fill the row.' },
       slot('Slot0', 'Top left', '3'),

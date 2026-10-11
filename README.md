@@ -27,6 +27,8 @@ with "Group time with complications" on, the two re-center together in the middl
 
 - Time font (Bold, Light, Digital, Digital bold, Large), leading zero on hours, AM/PM on/off
 - Colors: background, time, AM/PM, complication text, complication icons
+- Bars: background color behind the top/bottom rows, a divider line next to the time, or both
+- Icon backing: circle badge, rounded square badge, or outline so icons stay readable on any color
 - 12h/24h follows the watch's system setting
 - Celsius/Fahrenheit, km/miles, weather update interval, optional city instead of GPS
 - Vibrate on Bluetooth disconnect

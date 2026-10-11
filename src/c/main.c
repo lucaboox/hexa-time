@@ -9,7 +9,7 @@
 
 #define KEY_SETTINGS 1
 #define KEY_WEATHER  2
-#define SETTINGS_VERSION 5
+#define SETTINGS_VERSION 6
 #define NUM_SLOTS 6
 #define NA -1
 #define DEG "\xc2\xb0"  // UTF-8 degree sign, escaped so file encoding can't break it
@@ -62,6 +62,9 @@ typedef struct {
   uint8_t version;
   GColor bg, time, ampm, text, icon;
   bool leading_zero, show_ampm, bt_vibe, temp_f, dist_mi, big_time, batt_text_color, wx_colors, center_group;
+  uint8_t bar_style;         // 0 none, 1 background, 2 line, 3 background + line
+  uint8_t icon_back;         // 0 none, 1 circle badge, 2 rounded square badge, 3 outline
+  GColor top_bar, bot_bar, line, icon_back_color;
   uint8_t batt_colors;       // 0 = icon color, 1 = red when low, 2 = green/yellow/red by level
   uint8_t time_font;
   uint8_t weather_interval;  // minutes
@@ -101,6 +104,9 @@ static time_t s_last_wx_req;
 // Cached layout
 static int16_t s_time_y, s_ampm_y;
 static GRect s_region[2];
+static GRect s_bar[2];       // top/bottom bar areas (background fill + divider line)
+static int8_t s_ibp;         // padding around icons for the badge/outline backing
+static bool s_mono;          // true while drawing an icon's outline silhouette
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -306,7 +312,7 @@ static void draw_cloud_over(GContext *ctx, int x, int y, int sz, GColor col) {
 
 // Weather palette: real-world colors when enabled, otherwise the icon color
 #ifdef PBL_COLOR
-#define WXC(color) (s.wx_colors ? (color) : s_ic)
+#define WXC(color) (s.wx_colors && !s_mono ? (color) : s_ic)
 #else
 #define WXC(color) s_ic
 #endif
@@ -319,6 +325,7 @@ static void set_colors(GContext *ctx, GColor c) {
 // Battery level color: green > 50%, yellow 21-50%, red <= 20%
 static GColor batt_level_color(void) {
 #ifdef PBL_COLOR
+  if (s_mono) return s_ic;
   uint8_t pct = s_batt.charge_percent;
   if (s.batt_colors == 2) return pct <= 20 ? GColorRed : pct <= 50 ? GColorYellow : GColorGreen;
   if (s.batt_colors == 1 && pct <= 20) return GColorRed;
@@ -459,7 +466,7 @@ static void draw_icon(GContext *ctx, uint8_t icon, int x, int y, int sz) {
       graphics_draw_line(ctx, GPoint(x + U(8), y + U(9)), GPoint(x + U(11), y + U(9)));
       break;
     case I_BT:
-      if (!s_bt) {
+      if (!s_bt && !s_mono) {
 #ifdef PBL_COLOR
         graphics_context_set_stroke_color(ctx, GColorRed);
 #endif
@@ -500,10 +507,43 @@ static void text_at(GContext *ctx, const char *str, const FontM *f, int cx, int 
                      GTextOverflowModeFill, GTextAlignmentCenter, NULL);
 }
 
+// Draws an icon whose box (including backing padding) starts at x,y.
+// `bg` is the color behind the slot, used for the icon's cut-outs.
+static void draw_icon_backed(GContext *ctx, uint8_t icon, int x, int y, int sz, GColor bg) {
+  int full = sz + s_ibp * 2;
+  int ix = x + s_ibp, iy = y + s_ibp;
+  s_ic = s.icon;
+  s_bgc = bg;
+  switch (s.icon_back) {
+    case 1:
+      graphics_context_set_fill_color(ctx, s.icon_back_color);
+      graphics_fill_circle(ctx, GPoint(x + full / 2, y + full / 2), full / 2);
+      s_bgc = s.icon_back_color;
+      break;
+    case 2:
+      graphics_context_set_fill_color(ctx, s.icon_back_color);
+      graphics_fill_rect(ctx, GRect(x, y, full, full), full / 4, GCornersAll);
+      s_bgc = s.icon_back_color;
+      break;
+    case 3: {
+      // Silhouette in the outline color, stamped around the icon
+      static const int8_t d[8][2] = { {-1,-1}, {0,-1}, {1,-1}, {-1,0}, {1,0}, {-1,1}, {0,1}, {1,1} };
+      s_mono = true;
+      s_ic = s_bgc = s.icon_back_color;
+      for (int i = 0; i < 8; i++) draw_icon(ctx, icon, ix + d[i][0], iy + d[i][1], sz);
+      s_mono = false;
+      s_ic = s.icon;
+      s_bgc = bg;
+      break;
+    }
+  }
+  draw_icon(ctx, icon, ix, iy, sz);
+}
+
 static int slot_height(uint8_t type) {
   switch (kind_of(type)) {
-    case K_ICON_TEXT: return ICON_S + GAP + s_f_comp.h;
-    case K_ICON: return ICON_BIG;
+    case K_ICON_TEXT: return ICON_S + s_ibp * 2 + GAP + s_f_comp.h;
+    case K_ICON: return ICON_BIG + s_ibp * 2;
     case K_TEXT: return s_f_comp.h;
     case K_STACK2: return (type == C_WEATHER_HILO ? s_f_comp.h : s_f_small.h) + GAP + 1 + s_f_comp.h;
     case K_STACK3: return s_f_small.h * 2 + s_f_comp.h + (GAP + 1) * 2;
@@ -520,7 +560,7 @@ static int row_height(int row) {
   return h;
 }
 
-static void draw_slot(GContext *ctx, const Slot *sl, int cx, int col_w, GRect reg, int row, bool side) {
+static void draw_slot(GContext *ctx, const Slot *sl, int cx, int col_w, GRect reg, int row, bool side, GColor bg) {
   uint8_t k = kind_of(sl->type);
   int ch = slot_height(sl->type);
   if (!ch) return;
@@ -536,11 +576,11 @@ static void draw_slot(GContext *ctx, const Slot *sl, int cx, int col_w, GRect re
 
   switch (k) {
     case K_ICON_TEXT:
-      draw_icon(ctx, icon_of(sl->type), cx - ICON_S / 2, y, ICON_S);
-      text_at(ctx, sl->l1, &s_f_comp, cx, y + ICON_S + GAP, tw);
+      draw_icon_backed(ctx, icon_of(sl->type), cx - ICON_S / 2 - s_ibp, y, ICON_S, bg);
+      text_at(ctx, sl->l1, &s_f_comp, cx, y + ICON_S + s_ibp * 2 + GAP, tw);
       break;
     case K_ICON:
-      draw_icon(ctx, icon_of(sl->type), cx - ICON_BIG / 2, y, ICON_BIG);
+      draw_icon_backed(ctx, icon_of(sl->type), cx - ICON_BIG / 2 - s_ibp, y, ICON_BIG, bg);
       break;
     case K_TEXT:
       text_at(ctx, sl->l1, &s_f_comp, cx, y, tw);
@@ -570,6 +610,21 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, s.bg);
   graphics_fill_rect(ctx, b, 0, GCornerNone);
 
+  // Bars: only rows that have complications get one
+  for (int row = 0; row < 2; row++) {
+    if (s_bar[row].size.h <= 0) continue;
+    if (s.bar_style & 1) {
+      graphics_context_set_fill_color(ctx, row ? s.bot_bar : s.top_bar);
+      graphics_fill_rect(ctx, s_bar[row], 0, GCornerNone);
+    }
+    if (s.bar_style & 2) {
+      int lw = PBL_IF_COLOR_ELSE(2, 1);
+      int ly = row ? s_bar[1].origin.y : s_bar[0].origin.y + s_bar[0].size.h - lw;
+      graphics_context_set_fill_color(ctx, s.line);
+      graphics_fill_rect(ctx, GRect(0, ly, b.size.w, lw), 0, GCornerNone);
+    }
+  }
+
   // Time
   graphics_context_set_text_color(ctx, s.time);
   graphics_draw_text(ctx, s_time_buf, s_f_time.font,
@@ -592,11 +647,12 @@ static void canvas_update(Layer *layer, GContext *ctx) {
       if (sl->type != C_NONE) active[n++] = sl;
     }
     if (!n) continue;
+    GColor row_bg = (s.bar_style & 1) ? (row ? s.bot_bar : s.top_bar) : s.bg;
     int col_w = row_w / n;
     for (int c = 0; c < n; c++) {
       int cx = inset + col_w * c + col_w / 2;
       bool side = n > 1 && (c == 0 || c == n - 1);
-      draw_slot(ctx, active[c], cx, col_w, s_region[row], row, side);
+      draw_slot(ctx, active[c], cx, col_w, s_region[row], row, side, row_bg);
     }
   }
 }
@@ -645,6 +701,7 @@ static void compute_layout(void) {
   if (!s_canvas) return;
   GRect b = layer_get_bounds(s_canvas);
   s_show_ampm = s.show_ampm && !clock_is_24h_style();
+  s_ibp = s.icon_back == 3 ? 1 : s.icon_back ? (ICON_S >= 20 ? 4 : 3) : 0;
   int top_h = row_height(0), bot_h = row_height(1);
   load_time_font(s.big_time && !(top_h && bot_h));
 
@@ -683,6 +740,24 @@ static void compute_layout(void) {
   }
   s_time_y = top;
   s_ampm_y = top + s_f_time.h + GAP * 3;
+
+  // Bars extend from the screen edge to just past their row's content,
+  // never closer than GAP*2 to the time block
+  int gap2 = GAP * 2, block_bot = top + block_h;
+  if (top_h) {
+    int e = s_region[0].origin.y + s_region[0].size.h + gap2;
+    if (e > top - gap2) e = top - gap2;
+    s_bar[0] = GRect(0, 0, b.size.w, e);
+  } else {
+    s_bar[0] = GRect(0, 0, 0, 0);
+  }
+  if (bot_h) {
+    int e = s_region[1].origin.y - gap2;
+    if (e < block_bot + gap2) e = block_bot + gap2;
+    s_bar[1] = GRect(0, e, b.size.w, b.size.h - e);
+  } else {
+    s_bar[1] = GRect(0, 0, 0, 0);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -801,6 +876,12 @@ static void default_settings(void) {
     .batt_text_color = false,
     .wx_colors = true,
     .center_group = false,
+    .bar_style = 0,
+    .icon_back = 0,
+    .top_bar = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack),
+    .bot_bar = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack),
+    .line = PBL_IF_COLOR_ELSE(GColorLightGray, GColorWhite),
+    .icon_back_color = GColorBlack,
     .big_time = true,
 #ifdef LARGE_SCREEN
     .time_font = 3,
@@ -860,6 +941,12 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   READ_BOOL(WeatherColors, wx_colors)
   READ_BOOL(BigTime, big_time)
   READ_BOOL(CenterGroup, center_group)
+  READ_U8(BarStyle, bar_style)
+  READ_U8(IconBack, icon_back)
+  READ_COLOR(TopBarColor, top_bar)
+  READ_COLOR(BottomBarColor, bot_bar)
+  READ_COLOR(LineColor, line)
+  READ_COLOR(IconBackColor, icon_back_color)
   READ_U8(TimeFont, time_font)
   READ_U8(WeatherInterval, weather_interval)
   READ_U8(Slot0, slots[0])
