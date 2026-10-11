@@ -56,6 +56,7 @@
       "TopBarColor",
       "BottomBarColor",
       "LineColor",
+      "IconStyle",
       "IconBack",
       "IconBackColor",
       "WeatherTemp",
@@ -95,6 +96,96 @@
           "targetPlatforms": [
             "gabbro"
           ]
+        },
+        {
+          "type": "raw",
+          "name": "PDC_BATTERY_BG",
+          "file": "icons/BATTERY_BG.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_BATTERY_CHARGE",
+          "file": "icons/BATTERY_CHARGE.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_CLEAR_DAY",
+          "file": "icons/CLEAR_DAY.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_CLEAR_NIGHT",
+          "file": "icons/CLEAR_NIGHT.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_CLOUDY_DAY",
+          "file": "icons/CLOUDY_DAY.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_DISCONNECTED",
+          "file": "icons/DISCONNECTED.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_HEALTH_HEART",
+          "file": "icons/HEALTH_HEART.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_HEALTH_SLEEP",
+          "file": "icons/HEALTH_SLEEP.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_HEALTH_STEPS",
+          "file": "icons/HEALTH_STEPS.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_HEAVY_RAIN",
+          "file": "icons/HEAVY_RAIN.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_HEAVY_SNOW",
+          "file": "icons/HEAVY_SNOW.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_LIGHT_RAIN",
+          "file": "icons/LIGHT_RAIN.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_LIGHT_SNOW",
+          "file": "icons/LIGHT_SNOW.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_PARTLY_CLOUDY",
+          "file": "icons/PARTLY_CLOUDY.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_PARTLY_CLOUDY_NIGHT",
+          "file": "icons/PARTLY_CLOUDY_NIGHT.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_RAINING_AND_SNOWING",
+          "file": "icons/RAINING_AND_SNOWING.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_THUNDERSTORM",
+          "file": "icons/THUNDERSTORM.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "PDC_WEATHER_GENERIC",
+          "file": "icons/WEATHER_GENERIC.pdc"
         }
       ]
     }

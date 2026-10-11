@@ -99,7 +99,7 @@ module.exports = [
       { type: 'heading', defaultValue: 'Bars & icon backing' },
       {
         type: 'select', messageKey: 'BarStyle', label: 'Complication bars', defaultValue: '0',
-        description: 'A colored area behind the top/bottom complications, a divider line next to the time, or both.',
+        description: 'A colored area behind the top/bottom complications, a divider line next to the time, or both. With only one row in use, the bar gets taller with bigger icons and text.',
         options: [
           { label: 'None', value: '0' },
           { label: 'Background', value: '1' },
@@ -111,8 +111,16 @@ module.exports = [
       { type: 'color', messageKey: 'BottomBarColor', label: 'Bottom bar background', defaultValue: '555555' },
       { type: 'color', messageKey: 'LineColor', label: 'Divider line', defaultValue: 'AAAAAA' },
       {
+        type: 'select', messageKey: 'IconStyle', label: 'Icon style', defaultValue: '0',
+        description: 'Line art: outlined icons (from TimeStyle) that stay clean on any color. Solid: filled icons.',
+        options: [
+          { label: 'Line art', value: '0' },
+          { label: 'Solid', value: '1' }
+        ]
+      },
+      {
         type: 'select', messageKey: 'IconBack', label: 'Icon backing', defaultValue: '0',
-        description: 'Keeps icons readable on any bar or background color.',
+        description: 'Optional extra backing behind icons. Usually not needed with line art.',
         options: [
           { label: 'None', value: '0' },
           { label: 'Circle badge', value: '1' },

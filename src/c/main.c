@@ -4,26 +4,34 @@
 // Hexa Time: big centered time, AM/PM, up to 6 configurable complications.
 // Performance notes: one canvas layer, minute ticks only, all strings are
 // formatted when their data changes (never inside the draw call), and icons
-// are cheap vector primitives (no bitmaps to load or decompress).
+// are vectors: either primitives drawn in code ("solid") or tiny Pebble Draw
+// Command images ("line art", from TimeStyle by freakified, MIT license) that
+// are loaded once, scaled once, and cached.
 // ---------------------------------------------------------------------------
 
 #define KEY_SETTINGS 1
 #define KEY_WEATHER  2
-#define SETTINGS_VERSION 6
+#define SETTINGS_VERSION 7
 #define NUM_SLOTS 6
 #define NA -1
 #define DEG "\xc2\xb0"  // UTF-8 degree sign, escaped so file encoding can't break it
 
 #if PBL_DISPLAY_HEIGHT >= 220
 #define LARGE_SCREEN 1
-#define ICON_S 22
-#define ICON_BIG 30
 #define GAP 3
 #else
-#define ICON_S 16
-#define ICON_BIG 22
 #define GAP 2
 #endif
+
+// Icon sizes: [solid, line art] x [normal, single tall bar]
+#ifdef LARGE_SCREEN
+static const uint8_t ICON_SIZES[2][2] = { { 22, 32 }, { 32, 42 } };
+static const uint8_t ICON_BIG_SIZES[2][2] = { { 30, 40 }, { 40, 50 } };
+#else
+static const uint8_t ICON_SIZES[2][2] = { { 16, 25 }, { 24, 32 } };
+static const uint8_t ICON_BIG_SIZES[2][2] = { { 22, 30 }, { 30, 38 } };
+#endif
+#define PDC_SIZE 25  // native size of the line-art icons
 
 // Complication types (must match the option values in src/pkjs/config.js)
 enum {
@@ -55,7 +63,10 @@ enum { K_NONE, K_ICON_TEXT, K_ICON, K_TEXT, K_STACK2, K_STACK3 };
 enum {
   I_CLEAR_DAY = 0, I_CLEAR_NIGHT, I_PARTLY_DAY, I_PARTLY_NIGHT, I_CLOUDY,
   I_RAIN, I_SNOW, I_THUNDER, I_FOG, I_UNKNOWN,
-  I_BATTERY, I_STEPS, I_PIN, I_SLEEP, I_FLAME, I_HEART, I_TIMER, I_BT
+  I_BATTERY, I_STEPS, I_PIN, I_SLEEP, I_FLAME, I_HEART, I_TIMER, I_BT,
+  I_HEAVY_RAIN, I_HEAVY_SNOW, I_SLEET,
+  I_BATT_CHARGE,  // line-art charging bolt overlay
+  I_COUNT
 };
 
 typedef struct {
@@ -66,6 +77,7 @@ typedef struct {
   uint8_t icon_back;         // 0 none, 1 circle badge, 2 rounded square badge, 3 outline
   GColor top_bar, bot_bar, line, icon_back_color;
   uint8_t batt_colors;       // 0 = icon color, 1 = red when low, 2 = green/yellow/red by level
+  uint8_t icon_style;        // 0 = line art, 1 = solid
   uint8_t time_font;
   uint8_t weather_interval;  // minutes
   uint8_t slots[NUM_SLOTS];
@@ -89,7 +101,7 @@ static Layer *s_canvas;
 static Settings s;
 static Weather s_wx;
 static Slot s_slots[NUM_SLOTS];
-static FontM s_f_time, s_f_comp, s_f_small;
+static FontM s_f_time, s_f_comp, s_f_small, s_f_ampm;
 
 static char s_time_buf[8];
 static const char *s_ampm = "AM";
@@ -107,6 +119,11 @@ static GRect s_region[2];
 static GRect s_bar[2];       // top/bottom bar areas (background fill + divider line)
 static int8_t s_ibp;         // padding around icons for the badge/outline backing
 static bool s_mono;          // true while drawing an icon's outline silhouette
+static bool s_big_row;       // a single row is used, shown as a taller bar
+static int16_t s_icon_s, s_icon_big;
+
+static GDrawCommandImage *s_pdc[I_COUNT];
+static uint8_t s_pdc_size[I_COUNT];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -357,7 +374,9 @@ static void draw_battery(GContext *ctx, int x, int y, int sz) {
   graphics_fill_rect(ctx, GRect(inner.origin.x, inner.origin.y, w, inner.size.h), 0, GCornerNone);
 }
 
-static void draw_icon(GContext *ctx, uint8_t icon, int x, int y, int sz) {
+static void draw_icon_solid(GContext *ctx, uint8_t icon, int x, int y, int sz) {
+  if (icon == I_HEAVY_RAIN) icon = I_RAIN;
+  else if (icon == I_HEAVY_SNOW || icon == I_SLEET) icon = I_SNOW;
   graphics_context_set_fill_color(ctx, s_ic);
   graphics_context_set_stroke_color(ctx, s_ic);
   int sw = sz >= 20 ? 2 : PBL_IF_COLOR_ELSE(2, 1);
@@ -482,6 +501,185 @@ static void draw_icon(GContext *ctx, uint8_t icon, int x, int y, int sz) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Line-art icons (Pebble Draw Command images from TimeStyle, MIT license)
+// ---------------------------------------------------------------------------
+
+static uint32_t pdc_resource(uint8_t icon) {
+  switch (icon) {
+    case I_CLEAR_DAY: return RESOURCE_ID_PDC_CLEAR_DAY;
+    case I_CLEAR_NIGHT: return RESOURCE_ID_PDC_CLEAR_NIGHT;
+    case I_PARTLY_DAY: return RESOURCE_ID_PDC_PARTLY_CLOUDY;
+    case I_PARTLY_NIGHT: return RESOURCE_ID_PDC_PARTLY_CLOUDY_NIGHT;
+    case I_CLOUDY: return RESOURCE_ID_PDC_CLOUDY_DAY;
+    case I_RAIN: return RESOURCE_ID_PDC_LIGHT_RAIN;
+    case I_HEAVY_RAIN: return RESOURCE_ID_PDC_HEAVY_RAIN;
+    case I_SNOW: return RESOURCE_ID_PDC_LIGHT_SNOW;
+    case I_HEAVY_SNOW: return RESOURCE_ID_PDC_HEAVY_SNOW;
+    case I_SLEET: return RESOURCE_ID_PDC_RAINING_AND_SNOWING;
+    case I_THUNDER: return RESOURCE_ID_PDC_THUNDERSTORM;
+    case I_UNKNOWN: return RESOURCE_ID_PDC_WEATHER_GENERIC;
+    case I_BATTERY: return RESOURCE_ID_PDC_BATTERY_BG;
+    case I_BATT_CHARGE: return RESOURCE_ID_PDC_BATTERY_CHARGE;
+    case I_STEPS: return RESOURCE_ID_PDC_HEALTH_STEPS;
+    case I_SLEEP: return RESOURCE_ID_PDC_HEALTH_SLEEP;
+    case I_HEART: return RESOURCE_ID_PDC_HEALTH_HEART;
+    case I_BT: return RESOURCE_ID_PDC_DISCONNECTED;
+    default: return 0;
+  }
+}
+
+typedef struct { int num, den; } Scale;
+
+static bool pdc_scale_cb(GDrawCommand *cmd, uint32_t index, void *context) {
+  Scale *sc = context;
+  uint16_t n = gdraw_command_get_num_points(cmd);
+  for (uint16_t i = 0; i < n; i++) {
+    GPoint p = gdraw_command_get_point(cmd, i);
+    gdraw_command_set_point(cmd, i, GPoint(p.x * sc->num / sc->den, p.y * sc->num / sc->den));
+  }
+  if (gdraw_command_get_type(cmd) == GDrawCommandTypeCircle) {
+    gdraw_command_set_radius(cmd, gdraw_command_get_radius(cmd) * sc->num / sc->den);
+  }
+  uint8_t sw = gdraw_command_get_stroke_width(cmd);
+  if (sw) {
+    int nsw = (sw * sc->num + sc->den / 2) / sc->den;
+    gdraw_command_set_stroke_width(cmd, nsw < 1 ? 1 : nsw);
+  }
+  return true;
+}
+
+// Loads (and scales, once) the icon at the requested size; cached until the size changes
+static GDrawCommandImage *pdc_get(uint8_t icon, int sz) {
+  if (s_pdc[icon] && s_pdc_size[icon] == sz) return s_pdc[icon];
+  if (s_pdc[icon]) gdraw_command_image_destroy(s_pdc[icon]);
+  s_pdc[icon] = NULL;
+  uint32_t res = pdc_resource(icon);
+  if (!res) return NULL;
+  GDrawCommandImage *img = gdraw_command_image_create_with_resource(res);
+  if (!img) return NULL;
+  if (sz != PDC_SIZE) {
+    Scale sc = { sz, PDC_SIZE };
+    gdraw_command_list_iterate(gdraw_command_image_get_command_list(img), pdc_scale_cb, &sc);
+    gdraw_command_image_set_bounds_size(img, GSize(sz, sz));
+  }
+  s_pdc[icon] = img;
+  s_pdc_size[icon] = sz;
+  return img;
+}
+
+static bool pdc_color_cb(GDrawCommand *cmd, uint32_t index, void *context) {
+  GColor *colors = context;
+  gdraw_command_set_fill_color(cmd, colors[0]);
+  gdraw_command_set_stroke_color(cmd, colors[1]);
+  return true;
+}
+
+static bool draw_pdc(GContext *ctx, uint8_t icon, int x, int y, int sz, GColor fill, GColor stroke) {
+  GDrawCommandImage *img = pdc_get(icon, sz);
+  if (!img) return false;
+  GColor colors[2] = { fill, stroke };
+  gdraw_command_list_iterate(gdraw_command_image_get_command_list(img), pdc_color_cb, colors);
+  gdraw_command_image_draw(ctx, img, GPoint(x, y));
+  return true;
+}
+
+static GColor wx_color(uint8_t icon) {
+  switch (icon) {
+    case I_CLEAR_DAY:
+    case I_THUNDER: return WXC(GColorYellow);
+    case I_PARTLY_DAY: return WXC(GColorIcterine);
+    case I_RAIN:
+    case I_HEAVY_RAIN: return WXC(GColorVividCerulean);
+    case I_SNOW:
+    case I_HEAVY_SNOW: return WXC(GColorWhite);
+    case I_SLEET: return WXC(GColorCeleste);
+    default: return WXC(GColorLightGray);
+  }
+}
+
+static void draw_icon_line(GContext *ctx, uint8_t icon, int x, int y, int sz) {
+  graphics_context_set_stroke_width(ctx, sz >= 30 ? 3 : 2);
+
+  if (icon <= I_UNKNOWN || (icon >= I_HEAVY_RAIN && icon <= I_SLEET)) {
+    GColor col = wx_color(icon);
+    if (icon == I_FOG) {
+      // No line-art fog icon; the solid one is already made of lines
+      GColor ic = s_ic;
+      s_ic = col;
+      draw_icon_solid(ctx, I_FOG, x + sz / 8, y + sz / 8, sz * 3 / 4);
+      s_ic = ic;
+    } else {
+      draw_pdc(ctx, icon, x, y, sz, s_bgc, col);
+    }
+    return;
+  }
+
+  switch (icon) {
+    case I_BATTERY: {
+      GColor level = batt_level_color();
+      GColor outline = s.batt_colors == 2 ? level : s_ic;
+      draw_pdc(ctx, I_BATTERY, x, y, sz, s_bgc, outline);
+      if (s_batt.is_charging || s_batt.is_plugged) {
+        draw_pdc(ctx, I_BATT_CHARGE, x, y, sz, outline, s_bgc);  // bolt uses inverted colors
+      } else {
+        int pct = s_batt.charge_percent > 0 ? s_batt.charge_percent : 5;
+        int w = (18 * sz / PDC_SIZE) * pct / 100;
+        graphics_context_set_fill_color(ctx, level);
+        graphics_fill_rect(ctx, GRect(x + 3 * sz / PDC_SIZE, y + 8 * sz / PDC_SIZE, w < 1 ? 1 : w,
+                                      8 * sz / PDC_SIZE), 0, GCornerNone);
+      }
+      break;
+    }
+    case I_STEPS:
+    case I_SLEEP:
+    case I_HEART:
+      draw_pdc(ctx, icon, x, y, sz, s_bgc, s_ic);
+      break;
+    case I_BT:
+      if (!s_bt) {
+        draw_pdc(ctx, I_BT, x, y, sz, s_bgc, s_mono ? s_ic : PBL_IF_COLOR_ELSE(GColorRed, s_ic));
+      } else {
+        draw_icon_solid(ctx, I_BT, x + sz / 8, y + sz / 8, sz * 3 / 4);
+      }
+      break;
+    case I_PIN: {
+      // Outline map pin to match the line-art set
+      int x0 = x + sz / 8, y0 = y + sz / 16, s2 = sz * 3 / 4;
+      graphics_context_set_stroke_color(ctx, s_ic);
+      graphics_context_set_fill_color(ctx, s_bgc);
+      GPoint c = GPoint(x0 + s2 / 2, y0 + s2 * 3 / 8);
+      int r = s2 * 3 / 8;
+      GPoint tip = GPoint(c.x, y0 + s2 + sz / 8);
+      graphics_draw_line(ctx, GPoint(c.x - r * 4 / 5, c.y + r * 3 / 5), tip);
+      graphics_draw_line(ctx, GPoint(c.x + r * 4 / 5, c.y + r * 3 / 5), tip);
+      graphics_fill_circle(ctx, c, r);
+      graphics_draw_circle(ctx, c, r);
+      graphics_draw_circle(ctx, c, r / 3);
+      break;
+    }
+    case I_FLAME: {
+      static const int8_t outer[] = { 8,1, 12,5, 14,10, 12,14, 8,15, 4,14, 2,10, 4,5, 6,8 };
+      int x0 = x + sz / 8, y0 = y + sz / 8, s2 = sz * 3 / 4;
+      GPoint p[9];
+      for (int i = 0; i < 9; i++) p[i] = GPoint(x0 + outer[i * 2] * s2 / 16, y0 + outer[i * 2 + 1] * s2 / 16);
+      GPath path = { .num_points = 9, .points = p, .rotation = 0, .offset = GPointZero };
+      graphics_context_set_stroke_color(ctx, s_ic);
+      gpath_draw_outline(ctx, &path);
+      break;
+    }
+    default:
+      // Timer and anything else: the solid versions are already outlines
+      draw_icon_solid(ctx, icon, x + sz / 8, y + sz / 8, sz * 3 / 4);
+      break;
+  }
+}
+
+static void draw_icon(GContext *ctx, uint8_t icon, int x, int y, int sz) {
+  if (s.icon_style == 0) draw_icon_line(ctx, icon, x, y, sz);
+  else draw_icon_solid(ctx, icon, x, y, sz);
+}
+
 static uint8_t icon_of(uint8_t type) {
   switch (type) {
     case C_WEATHER:
@@ -541,13 +739,17 @@ static void draw_icon_backed(GContext *ctx, uint8_t icon, int x, int y, int sz, 
   draw_icon(ctx, icon, ix, iy, sz);
 }
 
+// Line-art mode draws the stacked date's day number inside an outlined box
+static bool date_boxed(uint8_t type) { return type == C_DATE_STACK && s.icon_style == 0; }
+#define BOX_PAD 3
+
 static int slot_height(uint8_t type) {
   switch (kind_of(type)) {
-    case K_ICON_TEXT: return ICON_S + s_ibp * 2 + GAP + s_f_comp.h;
-    case K_ICON: return ICON_BIG + s_ibp * 2;
+    case K_ICON_TEXT: return s_icon_s + s_ibp * 2 + GAP + s_f_comp.h;
+    case K_ICON: return s_icon_big + s_ibp * 2;
     case K_TEXT: return s_f_comp.h;
     case K_STACK2: return (type == C_WEATHER_HILO ? s_f_comp.h : s_f_small.h) + GAP + 1 + s_f_comp.h;
-    case K_STACK3: return s_f_small.h * 2 + s_f_comp.h + (GAP + 1) * 2;
+    case K_STACK3: return s_f_small.h * 2 + s_f_comp.h + (GAP + 1 + (date_boxed(type) ? BOX_PAD + 1 : 0)) * 2;
     default: return 0;
   }
 }
@@ -577,11 +779,11 @@ static void draw_slot(GContext *ctx, const Slot *sl, int cx, int col_w, GRect re
 
   switch (k) {
     case K_ICON_TEXT:
-      draw_icon_backed(ctx, icon_of(sl->type), cx - ICON_S / 2 - s_ibp, y, ICON_S, bg);
-      text_at(ctx, sl->l1, &s_f_comp, cx, y + ICON_S + s_ibp * 2 + GAP, tw);
+      draw_icon_backed(ctx, icon_of(sl->type), cx - s_icon_s / 2 - s_ibp, y, s_icon_s, bg);
+      text_at(ctx, sl->l1, &s_f_comp, cx, y + s_icon_s + s_ibp * 2 + GAP, tw);
       break;
     case K_ICON:
-      draw_icon_backed(ctx, icon_of(sl->type), cx - ICON_BIG / 2 - s_ibp, y, ICON_BIG, bg);
+      draw_icon_backed(ctx, icon_of(sl->type), cx - s_icon_big / 2 - s_ibp, y, s_icon_big, bg);
       break;
     case K_TEXT:
       text_at(ctx, sl->l1, &s_f_comp, cx, y, tw);
@@ -592,13 +794,21 @@ static void draw_slot(GContext *ctx, const Slot *sl, int cx, int col_w, GRect re
       text_at(ctx, sl->l2, &s_f_comp, cx, y + f1->h + GAP + 1, tw);
       break;
     }
-    case K_STACK3:
+    case K_STACK3: {
+      int sp = GAP + 1 + (date_boxed(sl->type) ? BOX_PAD + 1 : 0);
       text_at(ctx, sl->l1, &s_f_small, cx, y, tw);
-      y += s_f_small.h + GAP + 1;
+      y += s_f_small.h + sp;
+      if (date_boxed(sl->type)) {
+        int bw = s_icon_s + 2, bh = s_f_comp.h + BOX_PAD * 2;
+        graphics_context_set_stroke_color(ctx, s.icon);
+        graphics_context_set_stroke_width(ctx, 2);
+        graphics_draw_round_rect(ctx, GRect(cx - bw / 2, y - BOX_PAD, bw, bh), 3);
+      }
       text_at(ctx, sl->l2, &s_f_comp, cx, y, tw);
-      y += s_f_comp.h + GAP + 1;
+      y += s_f_comp.h + sp;
       text_at(ctx, sl->l3, &s_f_small, cx, y, tw);
       break;
+    }
   }
   if (batt_text) graphics_context_set_text_color(ctx, s.text);
 }
@@ -633,7 +843,7 @@ static void canvas_update(Layer *layer, GContext *ctx) {
                      GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   if (s_show_ampm) {
     graphics_context_set_text_color(ctx, s.ampm);
-    text_at(ctx, s_ampm, &s_f_small, b.size.w / 2, s_ampm_y, b.size.w);
+    text_at(ctx, s_ampm, &s_f_ampm, b.size.w / 2, s_ampm_y, b.size.w);
   }
 
   // Complications: active slots in each row share the row width evenly
@@ -698,17 +908,77 @@ static void load_time_font(bool big) {
   }
 }
 
+static bool row_used(int row) {
+  for (int c = 0; c < 3; c++) {
+    uint8_t t = s.slots[row * 3 + c];
+    if (t != C_NONE && t < C_COUNT) return true;
+  }
+  return false;
+}
+
+// Complication fonts and icon sizes; `big` = the single tall bar layout
+static void set_sizes(bool big) {
+  s_big_row = big;
+  int line = s.icon_style == 0;
+  s_icon_s = ICON_SIZES[big][line];
+  s_icon_big = ICON_BIG_SIZES[big][line];
+#ifdef LARGE_SCREEN
+  if (big) {
+    s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD), 10, 19 };
+    s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), 9, 16 };
+  } else {
+    s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), 9, 16 };
+    s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
+  }
+#else
+  if (big) {
+    s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), 9, 16 };
+    s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
+  } else {
+    s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
+    s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 4, 10 };
+  }
+#endif
+}
+
 static void compute_layout(void) {
   if (!s_canvas) return;
   GRect b = layer_get_bounds(s_canvas);
   s_show_ampm = s.show_ampm && !clock_is_24h_style();
-  s_ibp = s.icon_back == 3 ? 1 : s.icon_back ? (ICON_S >= 20 ? 4 : 3) : 0;
+
+  // One row on a rectangular screen becomes a taller bar with bigger
+  // complications; the time moves into the remaining space
+  bool single_row = row_used(0) != row_used(1);
+  (void)single_row;
+  set_sizes(PBL_IF_ROUND_ELSE(false, single_row && !s.center_group));
+  s_ibp = s.icon_back == 3 ? 1 : s.icon_back ? (s_icon_s >= 20 ? 4 : 3) : 0;
   int top_h = row_height(0), bot_h = row_height(1);
   load_time_font(s.big_time && !(top_h && bot_h));
 
-  int block_h = s_f_time.h + (s_show_ampm ? GAP * 3 + s_f_small.h : 0);
+  int block_h = s_f_time.h + (s_show_ampm ? GAP * 3 + s_f_ampm.h : 0);
   int pad = GAP * 2;
   int edge = PBL_IF_ROUND_ELSE(b.size.h / 12, 2);
+
+  if (s_big_row) {
+    int m = GAP * 3;
+    int top;
+    if (bot_h) {
+      s_region[1] = GRect(0, b.size.h - edge - m - bot_h, b.size.w, bot_h);
+      int bar_y = s_region[1].origin.y - m;
+      s_bar[0] = GRect(0, 0, 0, 0);
+      s_bar[1] = GRect(0, bar_y, b.size.w, b.size.h - bar_y);
+      top = (bar_y - block_h) / 2;
+    } else {
+      s_region[0] = GRect(0, edge + m, b.size.w, top_h);
+      int bar_e = s_region[0].origin.y + top_h + m;
+      s_bar[0] = GRect(0, 0, b.size.w, bar_e);
+      s_bar[1] = GRect(0, 0, 0, 0);
+      top = bar_e + (b.size.h - bar_e - block_h) / 2;
+    }
+    s_time_y = top;
+    s_ampm_y = top + s_f_time.h + GAP * 3;
+    return;
+  }
 
   int top;
   if ((top_h && bot_h) || ((top_h || bot_h) && !s.center_group)) {
@@ -717,15 +987,6 @@ static void compute_layout(void) {
     s_region[0] = GRect(0, edge, b.size.w, top - pad - edge);
     int bot = top + block_h + pad * 2;
     s_region[1] = GRect(0, bot, b.size.w, b.size.h - edge - bot);
-#ifndef PBL_ROUND
-    // A single row hugs the screen edge (round screens keep it nearer the
-    // middle, where the display is wide enough for three columns)
-    if (!(top_h && bot_h)) {
-      s_region[0] = GRect(0, edge + GAP, b.size.w, top_h);
-      int y = b.size.h - edge - GAP - bot_h;
-      s_region[1] = GRect(0, y > bot ? y : bot, b.size.w, bot_h);
-    }
-#endif
   } else if (top_h) {
     // Only the top row: center the row + time together as one group
     int gap = pad * 3;
@@ -878,6 +1139,7 @@ static void default_settings(void) {
     .wx_colors = true,
     .center_group = false,
     .bar_style = 0,
+    .icon_style = 0,
     .icon_back = 0,
     .top_bar = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack),
     .bot_bar = PBL_IF_COLOR_ELSE(GColorDarkGray, GColorBlack),
@@ -944,6 +1206,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   READ_BOOL(CenterGroup, center_group)
   READ_U8(BarStyle, bar_style)
   READ_U8(IconBack, icon_back)
+  READ_U8(IconStyle, icon_style)
   READ_COLOR(TopBarColor, top_bar)
   READ_COLOR(BottomBarColor, bot_bar)
   READ_COLOR(LineColor, line)
@@ -993,12 +1256,11 @@ static void init(void) {
   load_settings();
 
 #ifdef LARGE_SCREEN
-  s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD), 9, 16 };
-  s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
+  s_f_ampm = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
 #else
-  s_f_comp = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD), 6, 12 };
-  s_f_small = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 4, 10 };
+  s_f_ampm = (FontM){ fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 4, 10 };
 #endif
+  set_sizes(false);
 
   time_t now = time(NULL);
   s_tm = *localtime(&now);
@@ -1028,6 +1290,9 @@ static void deinit(void) {
 #endif
   window_destroy(s_window);
   if (s_big_font) fonts_unload_custom_font(s_big_font);
+  for (int i = 0; i < I_COUNT; i++) {
+    if (s_pdc[i]) gdraw_command_image_destroy(s_pdc[i]);
+  }
 }
 
 int main(void) {

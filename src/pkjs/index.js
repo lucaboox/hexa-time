@@ -5,7 +5,8 @@ var clay = new Clay(clayConfig);
 // Icon ids must match the I_* enum in src/c/main.c
 var I = {
   CLEAR_DAY: 0, CLEAR_NIGHT: 1, PARTLY_DAY: 2, PARTLY_NIGHT: 3, CLOUDY: 4,
-  RAIN: 5, SNOW: 6, THUNDER: 7, FOG: 8, UNKNOWN: 9
+  RAIN: 5, SNOW: 6, THUNDER: 7, FOG: 8, UNKNOWN: 9,
+  HEAVY_RAIN: 18, HEAVY_SNOW: 19, SLEET: 20
 };
 
 // WMO weather codes -> watch icon
@@ -14,8 +15,11 @@ function iconFor(code, isDay) {
   if (code === 1 || code === 2) return isDay ? I.PARTLY_DAY : I.PARTLY_NIGHT;
   if (code === 3) return I.CLOUDY;
   if (code === 45 || code === 48) return I.FOG;
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return I.RAIN;
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return I.SNOW;
+  if (code === 56 || code === 57 || code === 66 || code === 67) return I.SLEET;
+  if (code === 65 || code === 82) return I.HEAVY_RAIN;
+  if ((code >= 51 && code <= 64) || (code >= 80 && code <= 81)) return I.RAIN;
+  if (code === 75 || code === 86) return I.HEAVY_SNOW;
+  if ((code >= 71 && code <= 77) || code === 85) return I.SNOW;
   if (code >= 95) return I.THUNDER;
   return I.UNKNOWN;
 }
