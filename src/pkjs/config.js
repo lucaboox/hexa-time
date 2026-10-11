@@ -78,7 +78,7 @@ module.exports = [
         options: [
           { label: 'Same as icon color', value: '0' },
           { label: 'Icon color, red at 20% or less', value: '1' },
-          { label: 'By level: green / orange (50%) / red (20%)', value: '2' }
+          { label: 'By level: green / yellow (50%) / red (20%)', value: '2' }
         ]
       },
       {

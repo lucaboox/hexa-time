@@ -62,7 +62,7 @@ typedef struct {
   uint8_t version;
   GColor bg, time, ampm, text, icon;
   bool leading_zero, show_ampm, bt_vibe, temp_f, dist_mi, big_time, batt_text_color, wx_colors, center_group;
-  uint8_t batt_colors;       // 0 = icon color, 1 = red when low, 2 = green/orange/red by level
+  uint8_t batt_colors;       // 0 = icon color, 1 = red when low, 2 = green/yellow/red by level
   uint8_t time_font;
   uint8_t weather_interval;  // minutes
   uint8_t slots[NUM_SLOTS];
@@ -316,11 +316,11 @@ static void set_colors(GContext *ctx, GColor c) {
   graphics_context_set_stroke_color(ctx, c);
 }
 
-// Battery level color: green > 50%, orange 21-50%, red <= 20%
+// Battery level color: green > 50%, yellow 21-50%, red <= 20%
 static GColor batt_level_color(void) {
 #ifdef PBL_COLOR
   uint8_t pct = s_batt.charge_percent;
-  if (s.batt_colors == 2) return pct <= 20 ? GColorRed : pct <= 50 ? GColorOrange : GColorGreen;
+  if (s.batt_colors == 2) return pct <= 20 ? GColorRed : pct <= 50 ? GColorYellow : GColorGreen;
   if (s.batt_colors == 1 && pct <= 20) return GColorRed;
 #endif
   return s_ic;

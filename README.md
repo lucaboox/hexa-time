@@ -15,7 +15,7 @@ flint (Pebble 2 Duo), gabbro (Round 2).
 | Date | `10 OCT` |
 | Weather: icon + temp | (optionally colored) sun / moon / partly cloudy / cloud / rain / snow / thunder / fog icon, temp under it |
 | Weather: icon only / temp only / high-low | |
-| Battery: icon + %, icon only, % only | fill level, charging bolt, optional colors: green, orange at 50%, red at 20% |
+| Battery: icon + %, icon only, % only | fill level, charging bolt, optional colors: green, yellow at 50%, red at 20% |
 | Steps, Distance, Sleep, Active calories, Heart rate, Active time | Pebble Health (today's totals) |
 | Bluetooth | rune, crossed out (red) when disconnected |
 
