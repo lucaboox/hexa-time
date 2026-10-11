@@ -650,10 +650,18 @@ static void draw_icon_line(GContext *ctx, uint8_t icon, int x, int y, int sz) {
       s_ic = ic;
       GColor level = batt_level_color();
       GColor outline = LSTROKE(s.batt_colors == 2 ? level : s_ic);
+      GColor fill = s_lfill;
       if (s_lblack && s.batt_colors == 0) level = GColorBlack;
-      draw_pdc(ctx, I_BATTERY, x, y, sz, s_lfill, outline);
+#ifdef PBL_COLOR
+      if (s.batt_colors == 2 && !s_mono) {
+        // Level colors wash out on a light center; use a dark one so they pop
+        fill = GColorBlack;
+        outline = level;
+      }
+#endif
+      draw_pdc(ctx, I_BATTERY, x, y, sz, fill, outline);
       if (s_batt.is_charging || s_batt.is_plugged) {
-        draw_pdc(ctx, I_BATT_CHARGE, x, y, sz, outline, s_lfill);  // bolt uses inverted colors
+        draw_pdc(ctx, I_BATT_CHARGE, x, y, sz, outline, fill);  // bolt uses inverted colors
       } else {
         int pct = s_batt.charge_percent > 0 ? s_batt.charge_percent : 5;
         int w = (18 * sz / PDC_SIZE) * pct / 100;
